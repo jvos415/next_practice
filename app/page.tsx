@@ -12,10 +12,14 @@ export default function Home() {
   const [doggos, setDoggos] = useState<RandoDogImg[]>([]);
 
   useEffect(() => {
+    const allDogs: RandoDogImg[] = [];
     const getDoggos = async() => {
-      const res = await fetch("https://dog.ceo/api/breeds/image/random")
-      const data = await res.json();
-      setDoggos([...doggos, data])
+      for (let i = 0; i < 3; i++) {
+        const res = await fetch("https://dog.ceo/api/breeds/image/random")
+        const data = await res.json();
+        allDogs.push(data);
+      }
+      setDoggos(allDogs);
     }
     getDoggos();
   }, []);
@@ -24,7 +28,7 @@ export default function Home() {
     <main className="flex min-h-screen flex-col items-center gap-3 p-24">
       <div className="text-3xl"> Welcome to the Rando Doggo Application</div>
       <div> Welcome to the Rando Doggo Application</div>
-      <div>
+      <div className="flex gap-5">
         {doggos.length > 0 && (
           doggos.map((dog) => {
             return <DogCard dog={dog}/>

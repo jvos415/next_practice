@@ -7,7 +7,7 @@ interface DogCardProps {
 
 function DogCard({ dog }: DogCardProps) {
   return (
-    <div className="border rounded w-[350px] p-4 flex flex-col items-center gap-3">
+    <div className="border rounded w-[350px] p-4 flex flex-col items-center gap-3 justify-center">
       {dog?.message.split("/")[4]}
       <img src={dog?.message} alt={dog?.message.split("/")[4]} />
     </div>
