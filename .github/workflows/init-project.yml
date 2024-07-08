@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_PREFIX: registry.cloudzilla.ai/lens-local-john-project-2/
+  IMAGE_PREFIX: registry.cloudzilla.ai/lens-project-65/
 
 jobs:
   build-push:
@@ -22,7 +22,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: https://registry.cloudzilla.ai/
-          username: 'robot$lens-local-john-project-2+imageuser'
+          username: 'robot$lens-project-65+imageuser'
           password: '${{ secrets.DOCKER_PASSWORD }}'
 
       - name: downcase REPO
@@ -49,28 +49,91 @@ jobs:
           SECTION_K8S_API_URL: '${{ secrets.SECTION_K8S_API_URL }}'
           SECTION_API_TOKEN: '${{ secrets.SECTION_API_TOKEN }}'
           DOCKER_SERVER: 'registry.cloudzilla.ai'
-          DOCKER_USERNAME: 'robot$lens-local-john-project-2+imageuser'
+          DOCKER_USERNAME: 'robot$lens-project-65+imageuser'
           DOCKER_PASSWORD: '${{ secrets.DOCKER_PASSWORD }}'
           FULL_IMAGE_WITH_TAG: '${{ env.DOCKER_METADATA_OUTPUT_TAGS }}'
           POD_NAME: '${{ env.IMAGE_NAME }}'
           DEBUG: 1
         run: |
           #!/bin/bash
-          test -z "${DEBUG}" || set -o xtrace
+          # set -o xtrace
           set -o errexit
 
           cd "$(dirname "$0")"
 
           cert=/etc/ssl/certs/ca-certificates.crt
 
+          backoffretry() {
+            set +o errexit
+          command="$@"
+          # Maximum number of retries
+          max_retries=4
+          # Initial delay between retries (in seconds)
+          initial_delay=5
+          # Multiplier for exponential backoff
+          multiplier=2
+
+          output=""
+
+          # Capture the output and return code
+          attempt=0
+          while [ $attempt -lt $max_retries ]; do
+            output=$(eval "$command" 2>&1)
+            return_code=$?
+
+            if [ $return_code -eq 0 ]; then
+              # echo "The command was successful."
+              # echo "Output: $output"
+              echo "$output"
+              break
+            else
+              echo "The command failed with return code $return_code."
+              echo "Output: $output"
+              attempt=$((attempt + 1))
+              if [ $attempt -lt $max_retries ]; then
+                delay=$((initial_delay * multiplier ** (attempt - 1)))
+                echo "Retrying in $delay seconds..."
+                sleep $delay
+              fi
+            fi
+          done
+
+          if [ $return_code -ne 0 ]; then
+            echo "The command failed after $max_retries attempts."
+          fi
+          set -o errexit
+          }
+
           main() {
             setCluster
+            createOutput=$(backoffretry "kubectl create secret docker-registry regcred --docker-server=\"${DOCKER_SERVER}\" --docker-username=\"${DOCKER_USERNAME}\" --docker-password=\"${DOCKER_PASSWORD}\" --dry-run=client -o yaml | kubectl apply -f - ")
+            echo "$createOutput"
 
-            kubectl create secret docker-registry regcred --docker-server="${DOCKER_SERVER}" --docker-username="${DOCKER_USERNAME}" --docker-password="${DOCKER_PASSWORD}" --dry-run=client -o yaml | kubectl apply -f -
-            envsubst '$FULL_IMAGE_WITH_TAG $POD_NAME' < ${GITHUB_WORKSPACE}/k8s/deploy.yaml | kubectl apply -f -
-            kubectl apply -f ${GITHUB_WORKSPACE}/k8s/ingress-upstream.yaml
+            # Check if the output contains the string 'created'
+            if echo "$createOutput" | grep -q 'created'; then
+              echo "The output contains the string 'created', might indicate a problem as we expect updated, retrying."
+              sleep 10 # sleep while the error is resolving on the servers
+              backoffretry "kubectl create secret docker-registry regcred --docker-server=\"${DOCKER_SERVER}\" --docker-username=\"${DOCKER_USERNAME}\" --docker-password=\"${DOCKER_PASSWORD}\" --dry-run=client -o yaml | kubectl apply -f - "
+            fi
 
-            kubectl rollout restart deployment "section-project-deployment"
+            deploymentOutput=$(envsubst '$FULL_IMAGE_WITH_TAG $POD_NAME' < ${GITHUB_WORKSPACE}/k8s/deploy.yaml | kubectl apply -f - )
+            echo "$deploymentOutput"
+            # Check if the output contains the string 'created'
+            if echo "$deploymentOutput" | grep -q 'created'; then
+              echo "The deployment output contains the string 'created', might indicate a problem as we expect updated, retrying."
+              sleep 10 # sleep while the error is resolving on the servers
+              backoffretry "kubectl create secret docker-registry regcred --docker-server=\"${DOCKER_SERVER}\" --docker-username=\"${DOCKER_USERNAME}\" --docker-password=\"${DOCKER_PASSWORD}\" --dry-run=client -o yaml | kubectl apply -f - "
+            fi
+
+            ingressOutput=$(backoffretry "kubectl apply -f ${GITHUB_WORKSPACE}/k8s/ingress-upstream.yaml")
+            echo "$ingressOutput"
+            # Check if the output contains the string 'created'
+            if echo "$ingressOutput" | grep -q 'created'; then
+              echo "The deployment output contains the string 'created', might indicate a problem as we expect updated, retrying."
+              sleep 10 # sleep while the error is resolving on the servers
+              backoffretry "kubectl create secret docker-registry regcred --docker-server=\"${DOCKER_SERVER}\" --docker-username=\"${DOCKER_USERNAME}\" --docker-password=\"${DOCKER_PASSWORD}\" --dry-run=client -o yaml | kubectl apply -f - "
+            fi
+            backoffretry "kubectl rollout restart deployment \"section-project-deployment\""
           }
 
           setCluster() {
