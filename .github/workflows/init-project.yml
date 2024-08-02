@@ -58,10 +58,6 @@ jobs:
           #!/bin/bash
           test -z "${DEBUG}" || set -o xtrace
           set -o errexit
-
-          echo "!!!!here it is!!!!"
-          echo "$SECTION_API_TOKEN" | base64
-          echo "!!!! there it was!!!!"
           
           cd "$(dirname "$0")"
 
