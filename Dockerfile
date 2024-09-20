@@ -12,6 +12,6 @@ RUN yarn install
 
 # add app to container and attempt build
 COPY . ./
-RUN  || true
+RUN yarn run build2 || true
 
-CMD [""]
+CMD ["yarn run start2"]
