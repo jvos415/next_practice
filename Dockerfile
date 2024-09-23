@@ -14,4 +14,4 @@ RUN yarn install
 COPY . ./
 RUN yarn run build2 || true
 
-CMD [&quot;yarn&quot;, &quot;run&quot;, &quot;start2&quot;]
+CMD ["yarn", "run", "start2"]
